@@ -17,6 +17,11 @@
         <form id="bundle-form">
           <label for="urls">Article URLs</label>
           <textarea id="urls" name="urls" rows="8" placeholder="https://example.com/article-1&#10;https://example.com/article-2"></textarea>
+          <label for="alt-email" class="inline-label">
+            Alternate email (optional)
+            <span class="hint">Leave blank for one-click send to your (Michael's) Kindle address.</span>
+          </label>
+          <input type="email" id="alt-email" name="alt-email" placeholder="you@example.com" />
           <div class="actions">
             <button type="submit" id="submit-btn">Create PDF for Download</button>
             <button type="button" id="email-btn" class="ghost">Create and Send to Kindle</button>

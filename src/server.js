@@ -9,6 +9,7 @@ const fs = require('fs');
 require('dotenv').config();
 
 const MAX_IMG_HEIGHT = 226.8; // ~8cm in points
+const DEFAULT_KINDLE_EMAIL = process.env.DEFAULT_KINDLE_EMAIL;
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -316,6 +317,27 @@ function ensureMailer() {
   return { transporter, from };
 }
 
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+async function collectArticles(urls) {
+  const articles = [];
+  const skipped = [];
+
+  for (const url of urls) {
+    try {
+      const article = await fetchArticle(url);
+      articles.push(article);
+    } catch (err) {
+      console.error(`Failed to fetch/parse ${url}:`, err.message || err);
+      skipped.push(url);
+    }
+  }
+
+  return { articles, skipped };
+}
+
 async function buildPdf(articles) {
   const doc = new PDFDocument({ margin: 50, autoFirstPage: true });
   const buffers = [];
@@ -436,14 +458,17 @@ app.post('/api/compile', async (req, res) => {
   }
 
   try {
-    const articles = [];
-    for (const url of cleaned) {
-      const article = await fetchArticle(url);
-      articles.push(article);
+    const { articles, skipped } = await collectArticles(cleaned);
+
+    if (!articles.length) {
+      return res.status(502).json({ error: 'Could not fetch any articles.' });
     }
 
     const pdfBuffer = await buildPdf(articles);
     const filename = `Articles-${formattedDate()}.pdf`;
+    if (skipped.length) {
+      res.setHeader('X-Clippings-Skipped', skipped.join(','));
+    }
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(pdfBuffer);
@@ -458,24 +483,33 @@ app.post('/api/email', async (req, res) => {
   const cleaned = urls
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
+  const requestedEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
 
   if (!cleaned.length) {
     return res.status(400).json({ error: 'Please provide at least one URL.' });
   }
 
+  if (requestedEmail && !isValidEmail(requestedEmail)) {
+    return res.status(400).json({ error: 'Please provide a valid email address.' });
+  }
+
   try {
-    const articles = [];
-    for (const url of cleaned) {
-      const article = await fetchArticle(url);
-      articles.push(article);
+    const { articles, skipped } = await collectArticles(cleaned);
+
+    if (!articles.length) {
+      return res.status(502).json({ error: 'Could not fetch any articles.' });
     }
 
     const pdfBuffer = await buildPdf(articles);
     const filename = `Articles-${formattedDate()}.pdf`;
     const { transporter, from } = ensureMailer();
+    const destination = requestedEmail || DEFAULT_KINDLE_EMAIL;
+    if (!destination) {
+      return res.status(400).json({ error: 'No destination email configured. Set DEFAULT_KINDLE_EMAIL or provide an email.' });
+    }
     await transporter.sendMail({
       from,
-      to: 'michael_ead5e5@kindle.com',
+      to: destination,
       subject: 'convert',
       text: 'Articles attached.',
       attachments: [
@@ -486,7 +520,7 @@ app.post('/api/email', async (req, res) => {
       ]
     });
 
-    return res.json({ status: 'sent' });
+    return res.json({ status: 'sent', skipped });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: err.message });

@@ -1,5 +1,6 @@
 const form = document.getElementById('bundle-form');
 const urlsInput = document.getElementById('urls');
+const emailInput = document.getElementById('alt-email');
 const statusEl = document.getElementById('status');
 const submitBtn = document.getElementById('submit-btn');
 const emailBtn = document.getElementById('email-btn');
@@ -45,12 +46,21 @@ form.addEventListener('submit', async (event) => {
       throw new Error(payload.error || 'Request failed.');
     }
 
+    const skippedHeader = response.headers.get('x-clippings-skipped') || '';
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
 
     downloadLink.href = url;
     downloadWrap.classList.remove('hidden');
-    setStatus('Ready. Download your PDF below.');
+    if (skippedHeader.trim()) {
+      const skipped = skippedHeader
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
+      setStatus(`Ready. Some links failed: ${skipped.join(', ')}.`);
+    } else {
+      setStatus('Ready. Download your PDF below.');
+    }
   } catch (err) {
     console.error(err);
     setStatus(err.message || 'Something went wrong.');
@@ -70,7 +80,13 @@ emailBtn.addEventListener('click', async () => {
     return;
   }
 
-  setStatus('Building PDF and emailing to Kindle…');
+  const altEmail = (emailInput.value || '').trim();
+  if (altEmail && !altEmail.includes('@')) {
+    setStatus('Enter a valid email address.');
+    return;
+  }
+
+  setStatus(altEmail ? 'Building PDF and emailing your address…' : 'Building PDF and emailing to Kindle…');
   toggleLoading(true);
   downloadWrap.classList.add('hidden');
 
@@ -78,7 +94,7 @@ emailBtn.addEventListener('click', async () => {
     const response = await fetch('/api/email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls })
+      body: JSON.stringify({ urls, email: altEmail || undefined })
     });
 
     const payload = await response.json().catch(() => ({}));
@@ -86,7 +102,13 @@ emailBtn.addEventListener('click', async () => {
       throw new Error(payload.error || 'Email failed.');
     }
 
-    setStatus('Sent to Kindle address.');
+    if (Array.isArray(payload.skipped) && payload.skipped.length) {
+      setStatus(
+        `${altEmail ? 'Sent to your email address' : 'Sent to Kindle address'}, but some links failed: ${payload.skipped.join(', ')}.`
+      );
+    } else {
+      setStatus(altEmail ? 'Sent to your email address.' : 'Sent to Kindle address.');
+    }
   } catch (err) {
     console.error(err);
     setStatus(err.message || 'Something went wrong.');

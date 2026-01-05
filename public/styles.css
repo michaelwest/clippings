@@ -80,6 +80,36 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(249, 168, 38, 0.16);
 }
 
+input[type="email"] {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input[type="email"]:focus {
+  outline: none;
+  border-color: rgba(249, 168, 38, 0.4);
+  box-shadow: 0 0 0 3px rgba(249, 168, 38, 0.16);
+}
+
+.inline-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .actions {
   display: flex;
   align-items: center;
