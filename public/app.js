@@ -11,6 +11,27 @@ function setStatus(message) {
   statusEl.textContent = message;
 }
 
+async function logAndThrow(response, fallbackMessage) {
+  const text = await response.text().catch(() => '');
+  let message = fallbackMessage;
+
+  try {
+    const data = JSON.parse(text);
+    if (data && typeof data.error === 'string') {
+      message = data.error;
+    }
+    console.error('Server error response:', data);
+  } catch {
+    if (text) {
+      console.error('Server error response:', text);
+    } else {
+      console.error('Server error response with no body.');
+    }
+  }
+
+  throw new Error(message);
+}
+
 function toggleLoading(isLoading) {
   submitBtn.disabled = isLoading;
   submitBtn.textContent = isLoading ? 'Working…' : 'Create PDF';
@@ -42,8 +63,7 @@ form.addEventListener('submit', async (event) => {
     });
 
     if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.error || 'Request failed.');
+      await logAndThrow(response, 'Request failed.');
     }
 
     const skippedHeader = response.headers.get('x-clippings-skipped') || '';
@@ -97,11 +117,11 @@ emailBtn.addEventListener('click', async () => {
       body: JSON.stringify({ urls, email: altEmail || undefined })
     });
 
-    const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.error || 'Email failed.');
+      await logAndThrow(response, 'Email failed.');
     }
 
+    const payload = await response.json().catch(() => ({}));
     if (Array.isArray(payload.skipped) && payload.skipped.length) {
       setStatus(
         `${altEmail ? 'Sent to your email address' : 'Sent to Kindle address'}, but some links failed: ${payload.skipped.join(', ')}.`

@@ -70,8 +70,17 @@ function resolveUrl(src, baseUrl) {
   }
 }
 
+function createDom(html, url) {
+  try {
+    return new JSDOM(html, { url });
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Unknown parse error';
+    throw new Error(`Failed to parse HTML for ${url}: ${msg}`);
+  }
+}
+
 function extractBlocks(contentHtml, baseUrl) {
-  const dom = new JSDOM(contentHtml, { url: baseUrl });
+  const dom = createDom(contentHtml, baseUrl);
   const { document, Node } = dom.window;
   const blocks = [];
 
@@ -146,7 +155,7 @@ function extractBlocks(contentHtml, baseUrl) {
 }
 
 function findPrintableUrl(html, baseUrl) {
-  const dom = new JSDOM(html, { url: baseUrl });
+  const dom = createDom(html, baseUrl);
   const { document } = dom.window;
 
   const link = document.querySelector('link[rel="alternate"][media*="print"]');
@@ -175,7 +184,7 @@ async function fetchArticle(url) {
     html = await res.text();
   }
 
-  const dom = new JSDOM(html, { url });
+  const dom = createDom(html, url);
   const reader = new Readability(dom.window.document);
   const article = reader.parse();
 
