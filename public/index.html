@@ -17,14 +17,15 @@
         <form id="bundle-form">
           <label for="urls">Article URLs</label>
           <textarea id="urls" name="urls" rows="8" placeholder="https://example.com/article-1&#10;https://example.com/article-2"></textarea>
-          <label for="alt-email" class="inline-label">
-            Alternate email (optional)
-            <span class="hint">Leave blank for one-click send to your (Michael's) Kindle address.</span>
-          </label>
-          <input type="email" id="alt-email" name="alt-email" placeholder="you@example.com" />
           <div class="actions">
             <button type="submit" id="submit-btn">Create PDF for Download</button>
-            <button type="button" id="email-btn" class="ghost">Create and Send to Kindle</button>
+            <div class="dropdown">
+              <button type="button" id="email-dropdown" class="ghost">Create and Send to Email ▾</button>
+              <div class="dropdown-menu hidden" id="email-menu">
+                <button type="button" class="menu-item" data-action="default-send">Send to Default Kindle</button>
+                <button type="button" class="menu-item" data-action="alternate-send">Send to Another Email</button>
+              </div>
+            </div>
             <span id="status" class="status"></span>
           </div>
         </form>
@@ -33,6 +34,26 @@
         </div>
       </section>
     </main>
+
+    <div class="modal hidden" id="email-modal" role="dialog" aria-modal="true" aria-labelledby="email-modal-title">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="email-modal-title">Send to another email</h2>
+          <button type="button" class="close" id="modal-close" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <label for="alt-email" class="inline-label">
+            Destination email
+            <span class="hint">We’ll send a PDF attachment.</span>
+          </label>
+          <input type="email" id="alt-email" name="alt-email" placeholder="you@example.com" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="modal-send">Send</button>
+          <button type="button" class="ghost" id="modal-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
 
     <script src="app.js"></script>
   </body>

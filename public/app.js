@@ -1,11 +1,17 @@
 const form = document.getElementById('bundle-form');
 const urlsInput = document.getElementById('urls');
-const emailInput = document.getElementById('alt-email');
 const statusEl = document.getElementById('status');
 const submitBtn = document.getElementById('submit-btn');
-const emailBtn = document.getElementById('email-btn');
+const emailDropdown = document.getElementById('email-dropdown');
+const emailMenu = document.getElementById('email-menu');
+const menuItems = Array.from(document.querySelectorAll('.menu-item'));
 const downloadWrap = document.getElementById('download');
 const downloadLink = document.getElementById('download-link');
+const modal = document.getElementById('email-modal');
+const modalClose = document.getElementById('modal-close');
+const modalCancel = document.getElementById('modal-cancel');
+const modalSend = document.getElementById('modal-send');
+const emailInput = document.getElementById('alt-email');
 
 function setStatus(message) {
   statusEl.textContent = message;
@@ -35,16 +41,46 @@ async function logAndThrow(response, fallbackMessage) {
 function toggleLoading(isLoading) {
   submitBtn.disabled = isLoading;
   submitBtn.textContent = isLoading ? 'Working…' : 'Create PDF';
-  emailBtn.disabled = isLoading;
+  emailDropdown.disabled = isLoading;
+  menuItems.forEach((btn) => {
+    btn.disabled = isLoading;
+  });
+}
+
+function toggleMenu(show) {
+  const shouldShow = typeof show === 'boolean' ? show : emailMenu.classList.contains('hidden');
+  if (shouldShow) {
+    emailMenu.classList.remove('hidden');
+  } else {
+    emailMenu.classList.add('hidden');
+  }
+}
+
+function closeMenu() {
+  emailMenu.classList.add('hidden');
+}
+
+function openModal() {
+  modal.classList.remove('hidden');
+  emailInput.value = '';
+  setTimeout(() => emailInput.focus(), 0);
+}
+
+function closeModal() {
+  modal.classList.add('hidden');
+}
+
+function getUrls() {
+  return urlsInput.value
+    .split(/\n|,/)
+    .map((u) => u.trim())
+    .filter(Boolean);
 }
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const urls = urlsInput.value
-    .split(/\n|,/)
-    .map((u) => u.trim())
-    .filter(Boolean);
+  const urls = getUrls();
 
   if (!urls.length) {
     setStatus('Add at least one URL.');
@@ -89,24 +125,27 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
-emailBtn.addEventListener('click', async () => {
-  const urls = urlsInput.value
-    .split(/\n|,/)
-    .map((u) => u.trim())
-    .filter(Boolean);
+async function sendEmail(destinationEmail) {
+  const urls = getUrls();
 
   if (!urls.length) {
     setStatus('Add at least one URL.');
     return;
   }
 
-  const altEmail = (emailInput.value || '').trim();
-  if (altEmail && !altEmail.includes('@')) {
-    setStatus('Enter a valid email address.');
-    return;
+  const isAlternate = Boolean(destinationEmail);
+
+  if (isAlternate) {
+    if (!destinationEmail || !destinationEmail.includes('@')) {
+      setStatus('Enter a valid email address.');
+      return;
+    }
   }
 
-  setStatus(altEmail ? 'Building PDF and emailing your address…' : 'Building PDF and emailing to Kindle…');
+  closeMenu();
+  closeModal();
+
+  setStatus(isAlternate ? 'Building PDF and emailing your address…' : 'Building PDF and emailing to Kindle…');
   toggleLoading(true);
   downloadWrap.classList.add('hidden');
 
@@ -114,7 +153,7 @@ emailBtn.addEventListener('click', async () => {
     const response = await fetch('/api/email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls, email: altEmail || undefined })
+      body: JSON.stringify({ urls, email: isAlternate ? destinationEmail : undefined })
     });
 
     if (!response.ok) {
@@ -124,15 +163,52 @@ emailBtn.addEventListener('click', async () => {
     const payload = await response.json().catch(() => ({}));
     if (Array.isArray(payload.skipped) && payload.skipped.length) {
       setStatus(
-        `${altEmail ? 'Sent to your email address' : 'Sent to Kindle address'}, but some links failed: ${payload.skipped.join(', ')}.`
+        `${isAlternate ? 'Sent to your email address' : 'Sent to Kindle address'}, but some links failed: ${payload.skipped.join(', ')}.`
       );
     } else {
-      setStatus(altEmail ? 'Sent to your email address.' : 'Sent to Kindle address.');
+      setStatus(isAlternate ? 'Sent to your email address.' : 'Sent to Kindle address.');
     }
   } catch (err) {
     console.error(err);
     setStatus(err.message || 'Something went wrong.');
   } finally {
     toggleLoading(false);
+  }
+}
+
+emailDropdown.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMenu();
+});
+
+menuItems.forEach((btn) => {
+  btn.addEventListener('click', (event) => {
+    const action = event.currentTarget.dataset.action;
+    if (action === 'default-send') {
+      sendEmail();
+    } else if (action === 'alternate-send') {
+      openModal();
+    }
+  });
+});
+
+modalClose.addEventListener('click', closeModal);
+modalCancel.addEventListener('click', closeModal);
+
+modalSend.addEventListener('click', () => {
+  const altEmail = (emailInput.value || '').trim();
+  sendEmail(altEmail);
+});
+
+document.addEventListener('click', (event) => {
+  if (!emailMenu.contains(event.target) && !emailDropdown.contains(event.target)) {
+    closeMenu();
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeMenu();
+    closeModal();
   }
 });

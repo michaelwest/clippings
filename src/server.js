@@ -516,10 +516,11 @@ app.post('/api/email', async (req, res) => {
     if (!destination) {
       return res.status(400).json({ error: 'No destination email configured. Set DEFAULT_KINDLE_EMAIL or provide an email.' });
     }
+    const subject = requestedEmail ? `Clippings Articles ${formattedDate()}` : 'convert';
     await transporter.sendMail({
       from,
       to: destination,
-      subject: 'convert',
+      subject,
       text: 'Articles attached.',
       attachments: [
         {
