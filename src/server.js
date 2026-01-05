@@ -10,6 +10,8 @@ require('dotenv').config();
 
 const MAX_IMG_HEIGHT = 226.8; // ~8cm in points
 const DEFAULT_KINDLE_EMAIL = process.env.DEFAULT_KINDLE_EMAIL;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -197,6 +199,7 @@ async function fetchArticle(url) {
   return {
     title: article.title || url,
     byline: article.byline,
+    url,
     blocks
   };
 }
@@ -347,7 +350,82 @@ async function collectArticles(urls) {
   return { articles, skipped };
 }
 
-async function buildPdf(articles) {
+function buildArticleSummary(article, maxChars = 1400) {
+  const textBlocks = article.blocks
+    .filter((b) => b.type === 'text' || b.type === 'heading')
+    .map((b) => b.text)
+    .join(' ');
+  return (article.title ? `${article.title}. ` : '') + textBlocks.slice(0, maxChars);
+}
+
+async function generateComprehension(articles) {
+  if (!OPENAI_API_KEY) {
+    console.warn('OPENAI_API_KEY not set; skipping comprehension generation.');
+    return null;
+  }
+
+  const payloadArticles = articles.map((article, idx) => ({
+    title: article.title || `Article ${idx + 1}`,
+    summary: buildArticleSummary(article)
+  }));
+
+  const messages = [
+    {
+      role: 'system',
+      content:
+        'You generate concise reading comprehension questions and answers.'
+    },
+    {
+      role: 'user',
+      content: [
+        'For each article, create 5 questions: 3 about general themes/claims and 2 about memorable specific details.',
+        'Return JSON with this shape: [{"title": "...", "questions": ["q1", ...], "answers": ["a1", ...]}].',
+        'Questions should be standalone and not reference numbering from the source.',
+        'Answers should be brief but specific.',
+        'Use the provided article summaries below.',
+        '',
+        JSON.stringify(payloadArticles, null, 2)
+      ].join('\n')
+    }
+  ];
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages,
+        temperature: 0.4,
+        max_tokens: 1200
+      })
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`OpenAI request failed: ${res.status} ${res.statusText} ${text}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content || '';
+    const fencedJson = content.match(/```json\s*([\s\S]*?)```/i);
+    const fencedAny = content.match(/```[\s\S]*?```/i);
+    const jsonText = fencedJson ? fencedJson[1] : fencedAny ? fencedAny[0].replace(/```/g, '') : content;
+    const parsed = JSON.parse(jsonText);
+    if (!Array.isArray(parsed)) {
+      throw new Error('Unexpected comprehension response shape.');
+    }
+    return parsed;
+  } catch (err) {
+    console.error('Failed to generate comprehension questions:', err.message || err);
+    return null;
+  }
+}
+
+async function buildPdf(articles, comprehension) {
   const doc = new PDFDocument({ margin: 50, autoFirstPage: true });
   const buffers = [];
 
@@ -385,6 +463,16 @@ async function buildPdf(articles) {
         .text(article.byline, {
           width
         });
+      doc.fillColor('black');
+    }
+
+    if (article.url) {
+      doc.moveDown(article.byline ? 0.15 : 0.3);
+      doc
+        .font(fonts.sansRegular)
+        .fontSize(10)
+        .fillColor('blue')
+        .text(article.url, { width, link: article.url, underline: true });
       doc.fillColor('black');
     }
 
@@ -447,6 +535,53 @@ async function buildPdf(articles) {
     await addArticle(articles[i], i);
   }
 
+  const width = pageWidth();
+
+  if (comprehension && comprehension.length) {
+    doc.addPage();
+    doc.font(fonts.sansBold).fontSize(20).text('Comprehension', { width });
+    doc.moveDown(0.6);
+
+    comprehension.forEach((section) => {
+      doc
+        .font(fonts.bold)
+        .fontSize(14)
+        .text(section.title || 'Untitled', { width });
+      doc.moveDown(0.3);
+      (section.questions || []).forEach((q, idx) => {
+        doc
+          .font(fonts.regular)
+          .fontSize(12)
+          .text(`${idx + 1}. ${q}`, { width });
+        doc.moveDown(0.4);
+      });
+      doc.moveDown(0.6);
+    });
+
+    doc.addPage();
+    doc.font(fonts.sansBold).fontSize(20).text('Answers', { width });
+    doc.moveDown(0.6);
+    comprehension.forEach((section) => {
+      doc
+        .font(fonts.bold)
+        .fontSize(14)
+        .text(section.title || 'Untitled', { width });
+      doc.moveDown(0.3);
+      const answers = section.answers || [];
+      const questions = section.questions || [];
+      const count = Math.min(answers.length, questions.length || answers.length);
+      for (let i = 0; i < count; i++) {
+        const label = questions[i] ? `Q${i + 1}` : `${i + 1}`;
+        doc
+          .font(fonts.regular)
+          .fontSize(12)
+          .text(`${label}: ${answers[i]}`, { width });
+        doc.moveDown(0.3);
+      }
+      doc.moveDown(0.6);
+    });
+  }
+
   doc.end();
 
   return await new Promise((resolve) => {
@@ -461,6 +596,7 @@ app.post('/api/compile', async (req, res) => {
   const cleaned = urls
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
+  const includeQuiz = req.body.includeQuiz !== false;
 
   if (!cleaned.length) {
     return res.status(400).json({ error: 'Please provide at least one URL.' });
@@ -473,8 +609,9 @@ app.post('/api/compile', async (req, res) => {
       return res.status(502).json({ error: 'Could not fetch any articles.' });
     }
 
-    const pdfBuffer = await buildPdf(articles);
-    const filename = `Articles-${formattedDate()}.pdf`;
+    const comprehension = includeQuiz ? await generateComprehension(articles) : null;
+    const pdfBuffer = await buildPdf(articles, comprehension);
+    const filename = `Clippings-${formattedDate()}.pdf`;
     if (skipped.length) {
       res.setHeader('X-Clippings-Skipped', skipped.join(','));
     }
@@ -493,6 +630,7 @@ app.post('/api/email', async (req, res) => {
     .map((u) => (typeof u === 'string' ? u.trim() : ''))
     .filter(Boolean);
   const requestedEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
+  const includeQuiz = req.body.includeQuiz !== false;
 
   if (!cleaned.length) {
     return res.status(400).json({ error: 'Please provide at least one URL.' });
@@ -509,8 +647,9 @@ app.post('/api/email', async (req, res) => {
       return res.status(502).json({ error: 'Could not fetch any articles.' });
     }
 
-    const pdfBuffer = await buildPdf(articles);
-    const filename = `Articles-${formattedDate()}.pdf`;
+    const comprehension = includeQuiz ? await generateComprehension(articles) : null;
+    const pdfBuffer = await buildPdf(articles, comprehension);
+    const filename = `Clippings-${formattedDate()}.pdf`;
     const { transporter, from } = ensureMailer();
     const destination = requestedEmail || DEFAULT_KINDLE_EMAIL;
     if (!destination) {

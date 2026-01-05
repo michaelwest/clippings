@@ -5,6 +5,7 @@ const submitBtn = document.getElementById('submit-btn');
 const emailDropdown = document.getElementById('email-dropdown');
 const emailMenu = document.getElementById('email-menu');
 const menuItems = Array.from(document.querySelectorAll('.menu-item'));
+const quizToggle = document.getElementById('quiz-toggle');
 const downloadWrap = document.getElementById('download');
 const downloadLink = document.getElementById('download-link');
 const modal = document.getElementById('email-modal');
@@ -77,6 +78,17 @@ function getUrls() {
     .filter(Boolean);
 }
 
+function includeQuiz() {
+  return !!quizToggle?.checked;
+}
+
+function clippingsFilename() {
+  const today = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const date = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  return `Clippings-${date}.pdf`;
+}
+
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
@@ -95,7 +107,7 @@ form.addEventListener('submit', async (event) => {
     const response = await fetch('/api/compile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls })
+      body: JSON.stringify({ urls, includeQuiz: includeQuiz() })
     });
 
     if (!response.ok) {
@@ -107,6 +119,7 @@ form.addEventListener('submit', async (event) => {
     const url = URL.createObjectURL(blob);
 
     downloadLink.href = url;
+    downloadLink.download = clippingsFilename();
     downloadWrap.classList.remove('hidden');
     if (skippedHeader.trim()) {
       const skipped = skippedHeader
@@ -153,7 +166,11 @@ async function sendEmail(destinationEmail) {
     const response = await fetch('/api/email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls, email: isAlternate ? destinationEmail : undefined })
+      body: JSON.stringify({
+        urls,
+        email: isAlternate ? destinationEmail : undefined,
+        includeQuiz: includeQuiz()
+      })
     });
 
     if (!response.ok) {

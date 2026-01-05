@@ -10,13 +10,17 @@
     <main class="page">
       <section class="hero">
         <h1>Clippings</h1>
-        <p>Paste public article URLs (one per line). The app will fetch the content, remove clutter,<br/> and compile a single PDF you can download and print, or send to Kindle.</p>
+        <p>Paste public article URLs (one per line). The app will fetch the content, remove clutter,<br/> and compile a single PDF you can download and print, or send to email or Kindle.</p>
       </section>
 
       <section class="card">
         <form id="bundle-form">
           <label for="urls">Article URLs</label>
           <textarea id="urls" name="urls" rows="8" placeholder="https://example.com/article-1&#10;https://example.com/article-2"></textarea>
+          <label class="checkbox-row">
+            <input type="checkbox" id="quiz-toggle" checked />
+            <span>Include reading comprehension questions at end (🐌)</span>
+          </label>
           <div class="actions">
             <button type="submit" id="submit-btn">Create PDF for Download</button>
             <div class="dropdown">
@@ -30,7 +34,7 @@
           </div>
         </form>
         <div id="download" class="download hidden">
-          <a id="download-link" href="#" download="articles.pdf">Download PDF</a>
+          <a id="download-link" href="#" download="Clippings-YYYY-MM-DD.pdf">Download PDF</a>
         </div>
       </section>
     </main>
